@@ -13,7 +13,7 @@ __global__ void reduce1(int *g_idata, int *g_odata) {
 
    unsigned int tid = threadIdx.x;
    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
-   sdata[tid] = g_idata[tid];
+   sdata[tid] = g_idata[i];
    __syncthreads();
 
    for (unsigned int s = 1; s < blockDim.x; s *= 2) {
@@ -31,7 +31,7 @@ __global__ void reduce2(int *g_idata, int *g_odata) {
 
    unsigned int tid = threadIdx.x;
    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
-   sdata[tid] = g_idata[tid];
+   sdata[tid] = g_idata[i];
    __syncthreads();
 
    for (unsigned int s = 1; s < blockDim.x; s *= 2) {
@@ -50,7 +50,7 @@ __global__ void reduce3(int *g_idata, int *g_odata) {
 
    unsigned int tid = threadIdx.x;
    unsigned int i = threadIdx.x + blockIdx.x * blockDim.x;
-   sdata[tid] = g_idata[tid];
+   sdata[tid] = g_idata[i];
    __syncthreads();
 
    for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
@@ -168,7 +168,7 @@ __global__ void reduce6(int *g_idata, int *g_odata) {
 }
 
 int main() {
-   int num_element = 1 << 12;
+   int num_element = 1 << 6;
    int num_block = 8;
    int num_thread = num_element / num_block;
 
@@ -190,7 +190,7 @@ int main() {
 
    int sum_gpu = 0, sum = 0;
    for (unsigned int i = 0; i < num_block; i++) {
-      sum_gpu += h_odata[i*num_thread];
+      sum_gpu += h_odata[i];
    }
 
    sum = reduce_gold(h_idata, num_element);
