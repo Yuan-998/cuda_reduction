@@ -46,7 +46,25 @@ __global__ void reduce3(int *g_idata, int *g_odata) {
    __syncthreads();
 
    for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
-      if (tid < blockDim.x) {
+      if (tid < s) {
+       sdata[tid] += sdata[tid + s];
+      }
+      __syncthreads();
+   }
+   
+   if (tid == 0) g_odata[blockIdx.x] = sdata[0];
+}
+
+__global__ void reduce4(int *g_idata, int *g_odata) {
+   extern __shared__ int sdata[];
+
+   unsigned int tid = threadIdx.x;
+   unsigned int i = threadIdx.x + blockIdx.x*2 * blockDim.x;
+   sdata[tid] = g_idata[i] + g_idata[i+blockDim.x];
+   __syncthreads();
+
+   for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
+      if (tid < s) {
        sdata[tid] += sdata[tid + s];
       }
       __syncthreads();
