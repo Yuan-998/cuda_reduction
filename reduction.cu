@@ -1,14 +1,14 @@
 #include <stdio.h>
 
-int reduce_gold(int *data, int len) {
-   int res = 0;
-   for (int i = 0; i < len; i++) {
+long reduce_gold(long *data, int len) {
+   long res = 0;
+   for (long i = 0; i < len; i++) {
       res += data[i];
    }
    return res;
 }
 
-__global__ void reduce1(int *g_idata, int *g_odata) {
+__global__ void reduce1(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
@@ -26,7 +26,7 @@ __global__ void reduce1(int *g_idata, int *g_odata) {
    if (tid == 0) g_odata[blockIdx.x] = sdata[0];
 }
 
-__global__ void reduce2(int *g_idata, int *g_odata) {
+__global__ void reduce2(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
@@ -45,7 +45,7 @@ __global__ void reduce2(int *g_idata, int *g_odata) {
    if (tid == 0) g_odata[blockIdx.x] = sdata[0];
 }
 
-__global__ void reduce3(int *g_idata, int *g_odata) {
+__global__ void reduce3(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
@@ -63,7 +63,7 @@ __global__ void reduce3(int *g_idata, int *g_odata) {
    if (tid == 0) g_odata[blockIdx.x] = sdata[0];
 }
 
-__global__ void reduce4(int *g_idata, int *g_odata) {
+__global__ void reduce4(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
@@ -90,7 +90,7 @@ __device__ void warpReduce(volatile int *sdata, int tid) {
    sdata[tid] += sdata[tid + 1];
 }
 
-__global__ void reduce5(int *g_idata, int *g_odata) {
+__global__ void reduce5(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
@@ -168,34 +168,102 @@ __global__ void reduce6(int *g_idata, int *g_odata) {
 }
 
 int main() {
-   int num_element = 1 << 6;
-   int num_block = 8;
-   int num_thread = num_element / num_block;
+   int num_element = 1 << 22;
+   int num_thread = 256;
+   int num_block = num_element / num_thread;
 
-   int *h_idata, *d_idata, *h_odata, *d_odata;
+   long *h_idata, *d_idata, *h_odata, *d_odata;
 
-   h_idata = (int *)malloc(sizeof(int) * num_element);
-   h_odata = (int *)malloc(sizeof(int) * num_element);
+   h_idata = (long *)malloc(sizeof(long) * num_element);
+   h_odata = (long *)malloc(sizeof(long) * num_block);
 
-   cudaMalloc((void **)&d_idata, sizeof(int)*num_element);
-   cudaMalloc((void **)&d_odata, sizeof(int)*num_element);
+   cudaMalloc((void **)&d_idata, sizeof(long)*num_element);
+   cudaMalloc((void **)&d_odata, sizeof(long)*num_block);
 
-   for (unsigned int i = 0; i < num_element; i++) {
+   for (long i = 0; i < num_element; i++) {
       h_idata[i] = i;
    }
 
-   cudaMemcpy(d_idata, h_idata, sizeof(int)*num_element, cudaMemcpyHostToDevice);
-   reduce1<<<num_block, num_thread>>>(d_idata, d_odata);
-   cudaMemcpy(h_odata, d_odata, sizeof(int)*num_element, cudaMemcpyDeviceToHost);
-
-   int sum_gpu = 0, sum = 0;
-   for (unsigned int i = 0; i < num_block; i++) {
-      sum_gpu += h_odata[i];
-   }
+   long sum_gpu = 0, sum = 0;
 
    sum = reduce_gold(h_idata, num_element);
 
-   printf("error: %d - %d = %d\n", sum_gpu, sum, sum_gpu-sum);
+   float milli;
+   cudaEvent_t start, end;
+   cudaEventCreate(&start);
+   cudaEventCreate(&end);
+
+   // cudaEventRecord(start);
+   cudaMemcpy(d_idata, h_idata, sizeof(long)*num_element, cudaMemcpyHostToDevice);
+   // cudaEventRecord(end);
+   // cudaEventSynchronize(end);
+   // cudaEventElapsedTime(&milli, start, end);
+   // printf("Bandwidth: %.2f GB/s\n", sizeof(long)*num_element*1.0 / (milli * 1000000));
+
+   cudaEventRecord(start);
+   reduce1<<<num_block, num_thread>>>(d_idata, d_odata);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction1: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   reduce2<<<num_block, num_thread>>>(d_idata, d_odata);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction2: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   reduce3<<<num_block, num_thread>>>(d_idata, d_odata);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction3: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   reduce4<<<num_block, num_thread>>>(d_idata, d_odata);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction4: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   reduce5<<<num_block, num_thread>>>(d_idata, d_odata);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction5: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
 
    free(h_idata);
    free(h_odata);
