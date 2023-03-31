@@ -186,12 +186,19 @@ int main() {
 
    long sum_gpu = 0, sum = 0;
 
-   sum = reduce_gold(h_idata, num_element);
-
    float milli;
    cudaEvent_t start, end;
    cudaEventCreate(&start);
    cudaEventCreate(&end);
+
+   printf("4M elements for reduction\n\n");
+
+   cudaEventRecord(start);
+   sum = reduce_gold(h_idata, num_element);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("CPU: Elapsed time = %.4f ms\n\n", milli);
 
    // cudaEventRecord(start);
    cudaMemcpy(d_idata, h_idata, sizeof(long)*num_element, cudaMemcpyHostToDevice);
