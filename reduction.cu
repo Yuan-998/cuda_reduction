@@ -67,7 +67,7 @@ __global__ void reduce4(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
-   unsigned int i = threadIdx.x + blockIdx.x*2 * blockDim.x;
+   unsigned int i = threadIdx.x + blockIdx.x * 2 * blockDim.x;
    sdata[tid] = g_idata[i] + g_idata[i+blockDim.x];
    __syncthreads();
 
@@ -122,20 +122,13 @@ __device__ void warpReduceT(volatile int* sdata, int tid) {
 
 
 template <unsigned int blockSize>
-__global__ void reduce6(int *g_idata, int *g_odata) {
+__global__ void reduce6(long *g_idata, long *g_odata) {
    extern __shared__ int sdata[];
 
    unsigned int tid = threadIdx.x;
-   unsigned int i = threadIdx.x + blockIdx.x*2 * blockDim.x;
+   unsigned int i = threadIdx.x + blockIdx.x * blockDim.x*2;
    sdata[tid] = g_idata[i] + g_idata[i+blockDim.x];
    __syncthreads();
-
-   for (unsigned int s = blockDim.x/2; s > 32; s >>= 1) {
-      if (tid < s) {
-       sdata[tid] += sdata[tid + s];
-      }
-      __syncthreads();
-   }
 
    if(blockSize >= 1024){
         if(tid < 512){
@@ -165,6 +158,58 @@ __global__ void reduce6(int *g_idata, int *g_odata) {
    if (tid < 32) warpReduceT<blockSize>(sdata, tid);
    
    if (tid == 0) g_odata[blockIdx.x] = sdata[0];
+}
+
+void kernel6 (long *d_idata, long *d_odata, int num_thread, int num_block) {
+   switch (num_thread) {
+      case 1024:
+         reduce6<1024><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 512:
+         reduce6<512><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 256:
+         reduce6<256><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 128:
+         reduce6<128><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 64:
+         reduce6<64><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 32:
+         reduce6<32><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 16:
+         reduce6<16><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 8:
+         reduce6<8><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 4:
+         reduce6<4><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 2:
+         reduce6<2><<<num_block, num_thread>>>(d_idata, d_odata); break;
+      case 1:
+         reduce6<1><<<num_block, num_thread>>>(d_idata, d_odata); break;
+   }
+}
+
+__global__ void reduce7(long *d_idata, long *d_odata, int num_element) {
+   extern __shared__ int sdata[];
+   unsigned int tid = threadIdx.x;
+   unsigned int i = blockIdx.x * blockDim.x * 2 + threadIdx.x;
+   unsigned int gridSize = blockDim.x * 2 * gridDim.x;
+
+   sdata[tid] = 0;
+   while (i < num_element) {
+      sdata[tid] += d_idata[i] + d_idata[i + blockDim.x];
+      i += gridSize;
+   }
+   __syncthreads();
+
+   for (unsigned int s = blockDim.x/2; s > 32; s >>= 1) {
+      if (tid < s) {
+       sdata[tid] += sdata[tid + s];
+      }
+      __syncthreads();
+   }
+
+   if (tid < 32) warpReduce(sdata, tid);
+
+   if (tid == 0) d_odata[blockIdx.x] = sdata[0];
 }
 
 int main() {
@@ -265,6 +310,32 @@ int main() {
    cudaEventSynchronize(end);
    cudaEventElapsedTime(&milli, start, end);
    printf("Reduction5: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   kernel6(d_idata, d_odata, num_thread, num_block);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction6: Elapsed time = %.4f ms", milli);
+   cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
+   for (unsigned int i = 0; i < num_block; i++) {
+      sum_gpu += h_odata[i];
+   }
+   printf(sum_gpu-sum == 0 ? "   correct\n\n" : "   error\n\n");
+   sum_gpu = 0;
+
+   cudaEventRecord(start);
+   reduce7<<<num_block, num_thread>>>(d_idata, d_odata, num_element);
+   cudaEventRecord(end);
+   cudaEventSynchronize(end);
+   cudaEventElapsedTime(&milli, start, end);
+   printf("Reduction7: Elapsed time = %.4f ms", milli);
    cudaMemcpy(h_odata, d_odata, sizeof(long)*num_block, cudaMemcpyDeviceToHost);
    for (unsigned int i = 0; i < num_block; i++) {
       sum_gpu += h_odata[i];

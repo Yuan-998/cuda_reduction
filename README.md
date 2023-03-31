@@ -77,6 +77,7 @@ In this case, threads access shared memory sequentially so that there won't be a
 
 #### First add during global load
 ```c
+unsigned int i = threadIdx.x + blockIdx.x * 2 * blockDim.x;
 sdata[tid] = g_idata[i] + g_idata[i+blockDim.x];
 __syncthreads();
 
@@ -89,6 +90,8 @@ for (unsigned int s = blockDim.x/2; s > 0; s >>= 1) {
 ```
 
 In [sequential addressing](#sequential-addressing), only `s` threads are working. So, we can mannully carry out the first round while loading the data, which saves some efforts.
+
+![first_add](./img/first_add.png)
 
 #### Unroll last warp
 ```c
@@ -122,3 +125,18 @@ Compiler might use register to facilitate the access of shared memory.
 
 #### Completely unroll
 Use `template` to fully unroll the loop.
+
+#### Multiple elements per thread
+```c
+unsigned int tid = threadIdx.x;
+unsigned int i = blockIdx.x * blockDim.x * 2 + threadIdx.x;
+unsigned int gridSize = blockDim.x * 2 * gridDim.x;
+
+sdata[tid] = 0;
+while (i < num_element) {
+   sdata[tid] += d_idata[i] + d_idata[i + blockDim.x];
+   i += gridSize;
+}
+__syncthreads();
+```
+This every much similar to [First add during global load](#first-add-during-global-load). However, instead of adding once, it tries to add as many as possible.
